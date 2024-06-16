@@ -1,0 +1,8 @@
+*.csv
+*.xml
+.ipynb_checkpoints/
+__pycache__/
+.vercel
+env/
+.env
+config.py
