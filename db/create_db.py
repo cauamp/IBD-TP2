@@ -1,8 +1,8 @@
-import psycopg2
-import os
 from dotenv import load_dotenv
-import pandas as pd 
-import re 
+import pandas as pd
+import psycopg2
+import re
+import os
 from io import StringIO
 
 load_dotenv()
@@ -18,13 +18,13 @@ def connect_db():
         print("Erro ao conectar ao banco de dados PostgreSQL:", e)
         return None
 
-# Função para limpar XML
-def limpar_xml(conteudo):
+# Função para limpar e corrigir o XML
+def limpar_corrigir_xml(conteudo):
     # Substituir ou remover caracteres inválidos
     conteudo = re.sub(r'[^\x09\x0A\x0D\x20-\x7F]', '', conteudo)
     return conteudo
 
-# Função para ler o arquivo CSV
+# Função para ler arquivo CSV ou XML
 def ler_arquivo(caminho_arquivo):
     try:
         if not os.path.exists(caminho_arquivo):
@@ -33,7 +33,10 @@ def ler_arquivo(caminho_arquivo):
 
         if caminho_arquivo.endswith('.csv'):
             # Adicione o separador desejado aqui
-            tabela = pd.read_csv(caminho_arquivo, encoding='latin1', sep=';')
+            if 'SISU' in caminho_arquivo:
+                tabela = pd.read_csv(caminho_arquivo, encoding='latin1', sep='|')
+            if 'Prouni' in caminho_arquivo:
+                tabela = pd.read_csv(caminho_arquivo, encoding='latin1', sep=';')
         elif caminho_arquivo.endswith('.xml'):
             with open(caminho_arquivo, 'r', encoding='utf-8') as file:
                 conteudo = file.read()
@@ -88,7 +91,7 @@ def criar_tabela(conn, tabela, nome_tabela):
         """)
         conn.commit()
         cur.close()
-        print("Tabela criada com sucesso!")
+        print(f"Tabela '{nome_tabela}' criada com sucesso!")
     except psycopg2.Error as e:
         print("Erro ao criar a tabela:", e)
 
@@ -108,13 +111,13 @@ def inserir_dados(conn, tabela, nome_tabela):
         
         conn.commit()
         cur.close()
-        print("Dados inseridos com sucesso!")
+        print(f"Dados inseridos com sucesso na tabela '{nome_tabela}'!")
     except psycopg2.Error as e:
         print("Erro ao inserir dados:", e)
 
 dict_arquivo_tabela = {
     'static/Relatório_Chamada_Regular_SISU_1_2018.csv': 'Relatorio_SISU_1_18',
-    'static/Relatório_Prouni_2018.xml': 'Relatorio_Prouni_18'
+    'static/Relatório_Prouni_2018.csv': 'Relatorio_Prouni_18'
 }
 
 conn = connect_db()
