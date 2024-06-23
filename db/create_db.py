@@ -8,7 +8,6 @@ from io import StringIO
 load_dotenv()
 DATABASE = os.getenv("DATABASE_URL")
 
-
 def connect_db():
     try:
         conn = psycopg2.connect(DATABASE)
@@ -35,8 +34,11 @@ def ler_arquivo(caminho_arquivo):
             # Adicione o separador desejado aqui
             if 'SISU' in caminho_arquivo:
                 tabela = pd.read_csv(caminho_arquivo, encoding='latin1', sep='|')
-            if 'Prouni' in caminho_arquivo:
+            elif 'Prouni' in caminho_arquivo:
                 tabela = pd.read_csv(caminho_arquivo, encoding='latin1', sep=';')
+            else:
+                print("Erro: O nome do arquivo CSV não corresponde a SISU ou Prouni.")
+                return None
         elif caminho_arquivo.endswith('.xml'):
             with open(caminho_arquivo, 'r', encoding='utf-8') as file:
                 conteudo = file.read()
@@ -48,6 +50,8 @@ def ler_arquivo(caminho_arquivo):
         else:
             print("Formato de arquivo não suportado. Utilize .csv ou .xml.")
             return None
+        tabela.drop(columns=['__parsed_extra'], inplace=True)
+        print(tabela.head())
         return tabela
     except FileNotFoundError:
         print(f"Erro: O arquivo '{caminho_arquivo}' não foi encontrado.")
@@ -57,6 +61,7 @@ def ler_arquivo(caminho_arquivo):
         print(f"Erro: O arquivo '{caminho_arquivo}' está mal formatado.")
     except Exception as e:
         print(f"Erro: Ocorreu um erro ao ler o arquivo. Detalhes: {e}")
+        return None
 
 # Função para mapear tipos de dados do pandas para PostgreSQL
 def mapear_tipo_pandas_para_postgresql(dtype):
@@ -79,13 +84,14 @@ def criar_tabela(conn, tabela, nome_tabela):
         # Construir a instrução CREATE TABLE com base nos tipos de dados do DataFrame
         colunas = []
         for coluna, dtype in tabela.dtypes.items():
+            coluna = re.sub(r'\W', '', coluna)  # Remover caracteres não alfanuméricos dos nomes das colunas
             tipo = mapear_tipo_pandas_para_postgresql(dtype)
-            colunas.append(f"{coluna} {tipo}")
+            colunas.append(f'"{coluna}" {tipo}')
         colunas_str = ", ".join(colunas)
         
         # Executar a instrução CREATE TABLE
         cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS {nome_tabela} (
+        CREATE TABLE IF NOT EXISTS "{nome_tabela}" (
             {colunas_str}
         )
         """)
@@ -93,31 +99,31 @@ def criar_tabela(conn, tabela, nome_tabela):
         cur.close()
         print(f"Tabela '{nome_tabela}' criada com sucesso!")
     except psycopg2.Error as e:
+        conn.rollback()  # Reverter a transação em caso de erro
         print("Erro ao criar a tabela:", e)
 
-# Função para inserir dados na tabela
 def inserir_dados(conn, tabela, nome_tabela):
     try:
         cur = conn.cursor()
         
-        # Iterar sobre as linhas do DataFrame e inserir no banco de dados
-        for index, row in tabela.iterrows():
-            colunas = ", ".join(row.index)
-            valores = ", ".join([f"%s" for _ in row])
-            cur.execute(f"""
-            INSERT INTO {nome_tabela} ({colunas})
-            VALUES ({valores})
-            """, tuple(row))
-        
+        # Criar um objeto StringIO para armazenar os dados formatados
+        output = StringIO()
+        tabela.to_csv(output, sep='\t', header=False, index=False)
+        output.seek(0)
+
+        # Utilizar copy_from para inserir dados em massa
+        cur.copy_from(output, nome_tabela, null="", sep='\t')
+
         conn.commit()
         cur.close()
         print(f"Dados inseridos com sucesso na tabela '{nome_tabela}'!")
     except psycopg2.Error as e:
+        conn.rollback()  # Reverter a transação em caso de erro
         print("Erro ao inserir dados:", e)
 
 dict_arquivo_tabela = {
-    'static/Relatório_Chamada_Regular_SISU_1_2018.csv': 'Relatorio_SISU_1_18',
-    'static/Relatório_Prouni_2018.csv': 'Relatorio_Prouni_18'
+    'static/sdsdsd.xml': 'Relatorio_SISU_1_18',
+    
 }
 
 conn = connect_db()
@@ -127,6 +133,7 @@ if conn is not None:
         tabela = ler_arquivo(k)
         if tabela is not None:
             criar_tabela(conn, tabela, v)
+            print(f"Número total de linhas para inserir: {len(tabela)}")
             inserir_dados(conn, tabela, v)
     conn.close()
     print("Conexão com o banco de dados fechada.")
